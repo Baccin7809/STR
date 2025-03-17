@@ -1,0 +1,19 @@
+# Definindo o compilador e as flags
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall
+
+# Nome do executável
+TARGET = filosofos
+
+# Arquivos fonte
+SRC = main.cpp
+
+# Compilação
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET)
+
+# Limpeza dos arquivos gerados
+clean:
+	rm -f $(TARGET)
