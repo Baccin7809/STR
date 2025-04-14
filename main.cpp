@@ -1,77 +1,114 @@
-#include <iostream>
-#include <thread>
-#include <mutex>
-#include <vector>
-// code by @brunobaccin
-enum Estado { PENSANDO, COM_FOME, COMENDO };
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2025 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
 
-std::mutex garfos[5]; // Mutex para os garfos
+#include "main.h"
+#include <cstdint>
+#include "miros.h"
 
-// Função para mostrar o estado do sistema
-void exibirEstados(const Estado estados[], const bool garfos[]) {
-    for (int i = 0; i < 5; i++) {//loop que percore o vetor de estado 
-        char estadoChar;//variavel do estado 
-        if (estados[i] == PENSANDO) estadoChar = 'P';// se o estado for pensando o char recebe p
-        else if (estados[i] == COM_FOME) estadoChar = 'F';
-        else estadoChar = 'C';
-        std::cout << estadoChar << ",";//printa o estado e uma virgula
+#define BUF_TAM 5
+uint8_t buffer[BUF_TAM];
+uint8_t in = 0, out = 0;
+
+rtos::OSSem sem_vazio;
+rtos::OSSem sem_cheio;
+uint32_t conta0=0, conta1=0, conta2=0;
+
+uint32_t stack_blinky1[40];
+rtos::OSThread blinky1;
+uint32_t stack_produtor[80];
+rtos::OSThread produtor;
+
+//Variaveis para teste por debug
+volatile uint8_t last_produced = 0;
+volatile uint8_t last_consumed = 0;
+volatile uint8_t buffer_count = 0;
+
+
+
+uint32_t stack_consumidor[80];
+rtos::OSThread consumidor;
+void main_produtor() {
+    uint8_t item = 0;
+    while (1) {
+        rtos::OSSem_wait(&sem_vazio);
+
+        buffer[in] = item;
+        last_produced = item;  // Para debug
+        buffer_count++;        // Para debug
+        item++;
+        in = (in + 1) % BUF_TAM;
+
+        rtos::OSSem_signal(&sem_cheio);
+        rtos::OS_delay(200);
     }
-    std::cout << " | ";//printa um espaçamento
-
-    for (int i = 0; i < 5; i++) {//loop pra percorrer os garfos
-        std::cout << (garfos[i] ? "O," : "L,");//printa livre ou ocupado
-    }
-    std::cout << std::endl;//quebra de linha
 }
 
-// Função para o filósofo agir
-void filosofo(int id, Estado estados[], bool garfos[], std::mutex& mtx) {
-    while (true) {
-        estados[id] = PENSANDO;// vetor de estado na posição do id do filosofo recebe string PENSANDO
-        exibirEstados(estados, garfos);//printa todos os estados de garfos e filosofos
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000)); //delay q simula o tempo da ação
+void main_consumidor() {
+    while (1) {
+        rtos::OSSem_wait(&sem_cheio);
 
-        estados[id] = COM_FOME;// muda o estado do id recebido da função
-        exibirEstados(estados, garfos);//printa novamente 
+        last_consumed = buffer[out];  // Para debug
+        buffer_count--;               // Para debug
+        out = (out + 1) % BUF_TAM;
 
-        std::lock_guard<std::mutex> lock(mtx);// bloqueia o acesso ao codigo abaixo caso outras threads tentem acessar
-
-        int garfoEsq = id; // garfo esquerda na posição do filosofo
-        int garfoDir = (id + 1) % 5;//o garfo a direita da posição do filosofo
-
-        if (!garfos[garfoEsq] && !garfos[garfoDir]) { //ambos os garfos estarem false 
-            garfos[garfoEsq] = true;//ativa os garfos como true
-            garfos[garfoDir] = true;
-
-            estados[id] = COMENDO;//muda o estado do filosofo para comendo
-            exibirEstados(estados, garfos);// exibe  novamente
-            std::this_thread::sleep_for(std::chrono::milliseconds(2000));//delay pra simular o tempo de ação
-
-            garfos[garfoEsq] = false;// apos comer os garfos retornam como false
-            garfos[garfoDir] = false;
-
-            estados[id] = PENSANDO;// filosofo volta a pensar
-            exibirEstados(estados, garfos);//printa novamente os filosofos e garfos
-        }
+        rtos::OSSem_signal(&sem_vazio);
+        rtos::OS_delay(500);
+    }
+}
+void main_blinky1() {
+    while (1) {
+    	conta0++;
+    	rtos::OS_delay(rtos::TICKS_PER_SEC * 3U / 4U);
     }
 }
 
-int main() {
-    std::mutex mtx;//definindo um mutex
-
-    Estado estados[5] = {PENSANDO, PENSANDO, PENSANDO, PENSANDO, PENSANDO};// vetor de string
-    bool garfos[5] = {false, false, false, false, false};// vetor de booleano para os 5 garfos 
-
-
-    std::vector<std::thread> threads; // declaração de um vetor de threads
-
-    for (int i = 0; i < 5; i++) {
-        threads.push_back(std::thread(filosofo, i, std::ref(estados), std::ref(garfos), std::ref(mtx)));//cria a thread e coloca no vetor e faz a thread fazer a função filosofo
+uint32_t stack_blinky2[40];
+rtos::OSThread blinky2;
+void main_blinky2() {
+    while (1) {
+    	conta1++;
+    	rtos::OS_delay(rtos::TICKS_PER_SEC / 3U);
     }
-
-    for (auto& t : threads) {// espera as threads terminarem
-        t.join();
-    }
-
-    return 0;
 }
+
+uint32_t stack_blinky3[40];
+rtos::OSThread blinky3;
+void main_blinky3() {
+    while (1) {
+    	conta2++;
+    	rtos::OS_delay(rtos::TICKS_PER_SEC * 3U / 5U);
+    }
+}
+
+uint32_t stack_idleThread[40];
+
+int main(void)
+{
+
+	 rtos::OS_init(stack_idleThread, sizeof(stack_idleThread));
+
+	    rtos::OSSem_init(&sem_vazio, BUF_TAM);
+	    rtos::OSSem_init(&sem_cheio, 0);
+
+	    rtos::OSThread_start(&produtor, &main_produtor, stack_produtor, sizeof(stack_produtor));
+	    rtos::OSThread_start(&consumidor, &main_consumidor, stack_consumidor, sizeof(stack_consumidor));
+
+	    rtos::OS_run();
+}
+
+
